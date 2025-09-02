@@ -48,10 +48,9 @@ export class ModelMappingUtils {
    * 应用模型映射的核心逻辑
    * @param {Object} mapping - 映射配置对象
    * @param {Array} currentModels - 当前模型列表
-   * @param {Object} currentMapping - 当前映射关系
    * @returns {Object} 包含更新后的模型列表、新映射关系和是否有变更的对象
    */
-  static applyModelMapping(mapping, currentModels, currentMapping) {
+  static applyModelMapping(mapping, currentModels) {
     if (!mapping || typeof mapping !== 'object') {
       return { updatedModels: currentModels, newMapping: {}, hasChanges: false };
     }
@@ -99,11 +98,13 @@ export class ModelMappingUtils {
       return currentModels;
     }
 
-    const restoredModels = currentModels.map(model => {
-      if (originalMapping[model]) {
-        return originalMapping[model];
-      }
-      return model;
+    // 使用无原型对象并安全访问属性，避免原型污染影响
+    const safeMapping = Object.assign(Object.create(null), originalMapping);
+    const restoredModels = currentModels.map((model) => {
+      const key = typeof model === 'string' ? model.trim() : model;
+      return Object.prototype.hasOwnProperty.call(safeMapping, key)
+        ? safeMapping[key]
+        : key;
     });
 
     // 去重
@@ -141,6 +142,6 @@ export class ModelMappingUtils {
       return [];
     }
 
-    return Array.from(new Set(models.filter(model => model && model.trim())));
+    return Array.from(new Set(models.filter((m) => typeof m === 'string').map((m) => m.trim()).filter(Boolean)));
   }
 }

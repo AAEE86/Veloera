@@ -16,7 +16,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Button,
@@ -32,6 +32,9 @@ import {
 const MODEL_MAPPING_EXAMPLE = {
   'gpt-3.5-turbo': 'gpt-3.5-turbo-0125',
 };
+
+// Unsafe keys to prevent prototype pollution
+const UNSAFE_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 
 /**
  * ModelMappingEditor 组件 - 用于可视化编辑模型映射配置
@@ -60,14 +63,15 @@ const ModelMappingEditor = ({ value, onChange, placeholder, onRealtimeChange }) 
     try {
       const parsed = JSON.parse(jsonStr);
       if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-        const unsafe = new Set(['__proto__', 'prototype', 'constructor']);
+        const unsafe = UNSAFE_KEYS;
         return Object.entries(parsed)
-          .filter(([k]) => !unsafe.has(k))
+          .map(([key, value]) => [String(key).trim(), value])
+          .filter(([k]) => k !== '' && !unsafe.has(k))
           .map(([key, value]) => ({
-          id: Date.now() + Math.random(),
-          key,
-          value
-        }));
+            id: Date.now() + Math.random(),
+            key,
+            value: value == null ? '' : String(value).trim(),
+          }));
       }
       return [];
     } catch {
@@ -81,12 +85,15 @@ const ModelMappingEditor = ({ value, onChange, placeholder, onRealtimeChange }) 
       return '';
     }
     const obj = Object.create(null);
-    const unsafe = new Set(['__proto__', 'prototype', 'constructor']);
+    const unsafe = UNSAFE_KEYS;
     pairs.forEach(pair => {
       if (pair.key && pair.key.trim() !== '') {
-        const k = pair.key.trim();
-        if (!unsafe.has(k)) obj[k] = pair.value || '';
-      }
+        const k = String(pair.key).trim();
+        if (!unsafe.has(k)) {
+          const v = pair.value == null ? '' : String(pair.value).trim();
+          obj[k] = v;
+        }
+       }
     });
     return Object.keys(obj).length > 0 ? JSON.stringify(obj, null, 2) : '';
   };
@@ -128,6 +135,8 @@ const ModelMappingEditor = ({ value, onChange, placeholder, onRealtimeChange }) 
 
   // Update mapping pair - 只更新本地状态，不触发父组件更新
   const updateMappingPair = (index, field, value) => {
+    if (index < 0 || index >= mappingPairs.length) return;
+    if (field !== 'key' && field !== 'value') return;
     const newPairs = [...mappingPairs];
     newPairs[index] = { ...newPairs[index], [field]: value };
     setMappingPairs(newPairs);
@@ -155,31 +164,13 @@ const ModelMappingEditor = ({ value, onChange, placeholder, onRealtimeChange }) 
       setJsonError('');
     } else if (newMode === 'visual' && mode === 'json') {
       // Switching from JSON to visual
-      try {
-        if (jsonValue.trim() === '') {
-          setMappingPairs([{ id: Date.now() + Math.random(), key: '', value: '' }]);
-          setJsonError('');
-        } else {
-          const parsed = JSON.parse(jsonValue);
-          if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-            const unsafe = new Set(['__proto__', 'prototype', 'constructor']);
-              const pairs = Object.entries(parsed)
-                .filter(([k]) => !unsafe.has(k))
-                .map(([key, value]) => ({
-                id: Date.now() + Math.random(),
-                key,
-                value
-            }));
-            setMappingPairs(pairs.length > 0 ? pairs : [{ id: Date.now() + Math.random(), key: '', value: '' }]);
-            setJsonError('');
-          } else {
-            setJsonError(t('请输入有效的JSON对象格式'));
-            return;
-          }
-        }
-      } catch (error) {
-        setJsonError(t('JSON格式错误: {{message}}', { message: error.message }));
-        return;
+      if (jsonValue.trim() === '') {
+        setMappingPairs([{ id: Date.now() + Math.random(), key: '', value: '' }]);
+        setJsonError('');
+      } else {
+        const pairs = parseJsonToMappings(jsonValue);
+        setMappingPairs(pairs.length > 0 ? pairs : [{ id: Date.now() + Math.random(), key: '', value: '' }]);
+        setJsonError('');
       }
     }
     setMode(newMode);
@@ -202,10 +193,15 @@ const ModelMappingEditor = ({ value, onChange, placeholder, onRealtimeChange }) 
     try {
       const parsed = JSON.parse(newValue);
       if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        // Filter out unsafe keys before calling onRealtimeChange
+        const unsafe = UNSAFE_KEYS;
+        const filtered = Object.fromEntries(
+          Object.entries(parsed).filter(([k]) => !unsafe.has(k))
+        );
         setJsonError('');
         // 触发实时同步
         if (onRealtimeChange) {
-          onRealtimeChange(newValue);
+          onRealtimeChange(JSON.stringify(filtered, null, 2));
         }
       } else {
         setJsonError(t('请输入有效的JSON对象格式'));
@@ -221,8 +217,10 @@ const ModelMappingEditor = ({ value, onChange, placeholder, onRealtimeChange }) 
       try {
         const parsed = JSON.parse(jsonValue);
         if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+          const sanitized = mappingsToJson(parseJsonToMappings(jsonValue));
           isInternalUpdateRef.current = true;
-          onChange(jsonValue);
+          onChange(sanitized);
+          setJsonValue(sanitized);
         }
       } catch (error) {
         // 忽略错误，不更新父组件
@@ -298,7 +296,7 @@ const ModelMappingEditor = ({ value, onChange, placeholder, onRealtimeChange }) 
                 placeholder={t('目标模型名称')}
                 value={pair.key}
                 onChange={(value) => updateMappingPair(index, 'key', value)}
-                onBlur={() => handleInputBlur(index, 'key')}
+                onBlur={handleInputBlur}
                 style={{ flex: 1, marginRight: 8 }}
               />
               <Typography.Text style={{ margin: '0 8px' }}>→</Typography.Text>
@@ -306,7 +304,7 @@ const ModelMappingEditor = ({ value, onChange, placeholder, onRealtimeChange }) 
                 placeholder={t('实际模型名称')}
                 value={pair.value}
                 onChange={(value) => updateMappingPair(index, 'value', value)}
-                onBlur={() => handleInputBlur(index, 'value')}
+                onBlur={handleInputBlur}
                 style={{ flex: 1, marginRight: 8 }}
               />
               <Button

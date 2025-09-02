@@ -24,7 +24,7 @@ import { ModelMappingUtils } from '../utils/modelMappingUtils';
  * 模型映射管理 Hook
  * 提供模型映射相关的状态管理和操作方法
  */
-export const useModelMapping = (initialModels = [], initialMapping = {}) => {
+export const useModelMapping = (initialMapping = {}) => {
   // 用于追踪模型的原始名称映射关系 { displayName: originalName }
   const [modelOriginalMapping, setModelOriginalMapping] = useState(initialMapping);
 
@@ -102,14 +102,15 @@ export const useModelMapping = (initialModels = [], initialMapping = {}) => {
     const mapping = ModelMappingUtils.parseModelMapping(mappingValue);
     
     if (mapping && Object.keys(mapping).length > 0) {
-      const initialMapping = {};
+    const initialMapping = Object.create(null);
+    const DANGEROUS_KEYS = new Set(['__proto__', 'prototype', 'constructor']);  
       
       // 根据当前的模型映射和模型列表，建立原始映射关系
       Object.entries(mapping).forEach(([displayName, originalName]) => {
         const displayNameTrimmed = displayName.trim();
-        const originalNameTrimmed = originalName?.trim();
+        const originalNameTrimmed = typeof originalName === 'string' ? originalName.trim() : null;
         
-        if (displayNameTrimmed && originalNameTrimmed && models.includes(displayNameTrimmed)) {
+        if (displayNameTrimmed && originalNameTrimmed && !DANGEROUS_KEYS.has(displayNameTrimmed) && models.includes(displayNameTrimmed)) {
           initialMapping[displayNameTrimmed] = originalNameTrimmed;
         }
       });
