@@ -310,6 +310,7 @@ const LogsTable = () => {
     COST: 'cost',
     RETRY: 'retry',
     DETAILS: 'details',
+    IP: 'ip', // Add IP column key
   };
 
   // State for column visibility
@@ -351,6 +352,7 @@ const LogsTable = () => {
       [COLUMN_KEYS.COST]: true,
       [COLUMN_KEYS.RETRY]: isAdminUser,
       [COLUMN_KEYS.DETAILS]: true,
+      [COLUMN_KEYS.IP]: true, // IP column visible by default for all users
     };
   };
 
@@ -617,6 +619,40 @@ const LogsTable = () => {
           }
         }
         return isAdminUser ? <div>{content}</div> : <></>;
+      },
+    },
+    {
+      key: COLUMN_KEYS.IP,
+      title: t('IP地址'),
+      dataIndex: 'client_ip',
+      className: 'tableShow', // Always show the column, visibility controlled by column selector
+      render: (text, record, index) => {
+        // Only show IP for consumption and error logs
+        if (record.type !== 2 && record.type !== 6) {
+          return <></>;
+        }
+        
+        // If no IP available, show empty
+        if (!text || text.trim() === '') {
+          return <></>;
+        }
+        
+        // Display IP with copy functionality
+        return (
+          <Tag
+            color='blue'
+            size='large'
+            onClick={(event) => {
+              copyText(event, text);
+            }}
+            style={{ 
+              fontFamily: 'monospace',
+              cursor: 'pointer'
+            }}
+          >
+            {text}
+          </Tag>
+        );
       },
     },
     {
